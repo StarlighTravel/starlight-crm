@@ -2,15 +2,15 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
-# הגדרות דף
+# Page configuration
 st.set_page_config(page_title="Starlight Travel CRM", layout="wide")
 
-# חיבור ישיר לגיליון (ללא תלות ב-Secrets עבור הקישור)
+# Direct Connection to Spreadsheet
 spreadsheet_url = "https://docs.google.com/spreadsheets/d/1sACSy-IQY6rl3mw8A6l1JgyPCpFShRN326-_-KcVEJI/edit?usp=sharing"
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data():
-    # קריאת הגיליונות מהקישור הישיר
+    # Loading sheets with exact English names
     deals = conn.read(spreadsheet=spreadsheet_url, worksheet="Deals")
     users = conn.read(spreadsheet=spreadsheet_url, worksheet="Users")
     settings = conn.read(spreadsheet=spreadsheet_url, worksheet="Settings")
@@ -19,27 +19,27 @@ def load_data():
 try:
     df_deals, df_users, df_settings = load_data()
     
-    st.title("🌟 Starlight Travel - Management System")
+    st.title("🌟 Starlight Travel Management")
 
-    # בחירת משתמש מהרשימה בגיליון Users
+    # User Selection / Login Simulation
     if not df_users.empty:
         user_list = df_users['Email'].tolist()
-        current_user_email = st.sidebar.selectbox("Select User (Login):", user_list)
+        current_user_email = st.sidebar.selectbox("Login User:", user_list)
         
         user_row = df_users[df_users['Email'] == current_user_email].iloc[0]
         user_role = user_row['Role']
         user_name = user_row['Full_Name']
 
-        st.sidebar.success(f"Connected as: {user_name}")
+        st.sidebar.success(f"User: {user_name}")
         st.sidebar.info(f"Role: {user_role}")
 
-        # סינון לפי תפקיד
+        # Permissions Logic
         if user_role not in ['CEO', 'ACCOUNTANT']:
             display_deals = df_deals[df_deals['Seller_Email'] == current_user_email]
         else:
             display_deals = df_deals
 
-        # בניית ה-Pipeline
+        # Kanban Pipeline Construction
         stages = df_settings['Pipeline_Stages'].dropna().tolist()
         cols = st.columns(len(stages))
 
@@ -50,16 +50,24 @@ try:
                 
                 for index, row in stage_deals.iterrows():
                     with st.expander(f"👤 {row['Client_Name']}"):
-                        st.write(f"📞 {row['Phone']}")
+                        st.write(f"**Phone:** {row['Phone']}")
+                        st.write(f"**Source:** {row['Source']}")
+                        
+                        # Client Notes Area
                         st.text_area("Notes", value=row['Notes'], key=f"notes_{index}")
                         
-                        # כפתור וואטסאפ
-                        wa_link = f"https://wa.me/{row['Country_Code']}{row['Phone']}"
-                        st.link_button("💬 WhatsApp", wa_link)
+                        # WhatsApp Automation Button
+                        wa_number = str(row['Country_Code']) + str(row['Phone'])
+                        wa_link = f"https://wa.me/{wa_number.replace('+', '')}"
+                        st.link_button("💬 Send WhatsApp", wa_link)
+                        
+                        # Drive Link (if exists)
+                        if pd.notnull(row['Drive_Link']):
+                            st.link_button("📁 Open Folder", row['Drive_Link'])
     else:
-        st.warning("No users found in the Users sheet.")
+        st.warning("Data loading failed: Check Users sheet.")
 
 except Exception as e:
-    st.error("Connection Error!")
-    st.write("Make sure the Google Sheet is shared as 'Anyone with the link can view'.")
+    st.error("System Error")
+    st.write("Ensure spreadsheet sharing is set to 'Anyone with the link can view'")
     st.exception(e)
