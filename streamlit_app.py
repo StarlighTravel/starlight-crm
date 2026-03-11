@@ -1,76 +1,54 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
-# 1. Page Configuration
+# Page config
 st.set_page_config(page_title="Starlight CRM", layout="wide")
 
-# 2. Connection Settings
-# Replace with your actual Google Sheet URL
-URL = "https://docs.google.com/spreadsheets/d/1sACSy-IQY6rl3mw8A6l1JgyPCpFShRN326-_-KcVEJI/edit?usp=sharing"
+# Correct Export URL for Google Sheets
+# This format ensures pandas can read the sheet directly
+SHEET_ID = "1sACSy-IQY6rl3mw8A6l1JgyPCpFShRN326-_-KcVEJI"
+BASE_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv"
 
-def load_data(conn):
-    """Loads all required sheets with error handling."""
+@st.cache_data(ttl=60)
+def load_data(sheet_name):
+    url = f"{BASE_URL}&sheet={sheet_name}"
     try:
-        deals = conn.read(spreadsheet=URL, worksheet="Deals")
-        users = conn.read(spreadsheet=URL, worksheet="Users")
-        settings = conn.read(spreadsheet=URL, worksheet="Settings")
-        return deals, users, settings
+        return pd.read_csv(url)
     except Exception as e:
-        st.error(f"Error loading sheets: {e}")
-        return None, None, None
+        st.error(f"Error loading {sheet_name}: {e}")
+        return pd.DataFrame()
 
-# 3. Main Application Logic
-try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    df_deals, df_users, df_settings = load_data(conn)
+# Main App
+st.title("🌟 Starlight Travel Management")
 
-    if df_deals is not None:
-        st.title("🌟 Starlight Travel Management")
+df_deals = load_data("Deals")
+df_users = load_data("Users")
+df_settings = load_data("Settings")
 
-        # Sidebar - User Login Simulation
-        st.sidebar.header("User Access")
-        if not df_users.empty:
-            user_list = df_users['Email'].tolist()
-            selected_user = st.sidebar.selectbox("Select Login Email:", user_list)
-            
-            user_info = df_users[df_users['Email'] == selected_user].iloc[0]
-            st.sidebar.success(f"Welcome, {user_info['Full_Name']}")
-            st.sidebar.info(f"Role: {user_info['Role']}")
+if not df_deals.empty and not df_users.empty:
+    # Sidebar Login
+    user_list = df_users['Email'].tolist()
+    selected_user = st.sidebar.selectbox("Login Email:", user_list)
+    
+    user_info = df_users[df_users['Email'] == selected_user].iloc[0]
+    st.sidebar.success(f"Welcome, {user_info['Full_Name']}")
 
-            # Filter data based on Role
-            if user_info['Role'] not in ['CEO', 'ACCOUNTANT']:
-                mask = df_deals['Seller_Email'] == selected_user
-                display_df = df_deals[mask]
-            else:
-                display_df = df_deals
+    # Dashboard Logic
+    if 'Pipeline_Stages' in df_settings.columns:
+        stages = df_settings['Pipeline_Stages'].dropna().tolist()
+        cols = st.columns(len(stages))
 
-            # 4. Kanban Pipeline Display
-            if 'Pipeline_Stages' in df_settings.columns:
-                stages = df_settings['Pipeline_Stages'].dropna().tolist()
-                cols = st.columns(len(stages))
-
-                for i, stage in enumerate(stages):
-                    with cols[i]:
-                        st.markdown(f"### {stage}")
-                        # Filter deals for this specific stage
-                        stage_deals = display_df[display_df['Stage'] == stage]
+        for i, stage in enumerate(stages):
+            with cols[i]:
+                st.markdown(f"### {stage}")
+                stage_deals = df_deals[df_deals['Stage'] == stage]
+                
+                for _, row in stage_deals.iterrows():
+                    with st.expander(f"👤 {row['Client_Name']}"):
+                        st.write(f"Phone: {row['Phone']}")
+                        st.text_area("Notes", value=row['Notes'], key=f"n_{row.name}")
                         
-                        for index, row in stage_deals.iterrows():
-                            with st.expander(f"👤 {row['Client_Name']}"):
-                                st.write(f"**Phone:** {row['Phone']}")
-                                
-                                # Notes management
-                                st.text_area("Notes", value=row['Notes'], key=f"notes_{index}")
-                                
-                                # WhatsApp Button
-                                wa_link = f"https://wa.me/{str(row['Country_Code'])}{str(row['Phone'])}"
-                                st.link_button("💬 WhatsApp", wa_link)
-            else:
-                st.warning("Column 'Pipeline_Stages' not found in Settings sheet.")
-        else:
-            st.warning("No users found in the 'Users' sheet.")
-
-except Exception as e:
-    st.error("Global System Error")
-    st.exception(e)
+                        wa_link = f"https://wa.me/{str(row['Country_Code'])}{str(row['Phone'])}"
+                        st.link_button("💬 WhatsApp", wa_link)
+else:
+    st.warning("Please check if Sheet Tabs are named exactly: Deals, Users, Settings")
