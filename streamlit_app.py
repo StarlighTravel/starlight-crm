@@ -1,58 +1,76 @@
 import streamlit as st
-import pandas as pd
 from streamlit_gsheets import GSheetsConnection
+import pandas as pd
 
-# 1. Page Settings
-st.set_page_config(page_title="Starlight CRM - Pro", layout="wide")
+# Page config
+st.set_page_config(page_title="Starlight CRM", layout="wide")
 
-# 2. Spreadsheet Link
-url = "https://docs.google.com/spreadsheets/d/1sACSy-IQY6rl3mw8A6l1JgyPCpFShRN326-_-KcVEJI/edit?usp=sharing"
+# The URL of your Google Sheet
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1sACSy-IQY6rl3mw8A6l1JgyPCpFShRN326-_-KcVEJI/edit?usp=sharing"
 
-# 3. Connect (Using the simple connection)
+# Initialize Connection
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def load_data():
-    deals = conn.read(spreadsheet=url, worksheet="Deals")
-    users = conn.read(spreadsheet=url, worksheet="Users")
-    settings = conn.read(spreadsheet=url, worksheet="Settings")
-    tasks = conn.read(spreadsheet=url, worksheet="Tasks")
+    # Load all sheets
+    deals = conn.read(spreadsheet=SHEET_URL, worksheet="Deals")
+    users = conn.read(spreadsheet=SHEET_URL, worksheet="Users")
+    settings = conn.read(spreadsheet=SHEET_URL, worksheet="Settings")
+    tasks = conn.read(spreadsheet=SHEET_URL, worksheet="Tasks")
     return deals, users, settings, tasks
 
 try:
     df_deals, df_users, df_settings, df_tasks = load_data()
     
-    st.title("🌟 Starlight Travel Management")
+    st.title("🌟 Starlight Travel - Management System")
 
-    # Sidebar - Login
-    user_list = df_users['Email'].tolist()
-    selected_user = st.sidebar.selectbox("User Login:", user_list)
-    
-    # Kanban Board
-    stages = df_settings['Pipeline_Stages'].dropna().tolist()
-    cols = st.columns(len(stages))
+    # Sidebar Login Simulation
+    if not df_users.empty:
+        user_list = df_users['Email'].tolist()
+        current_user = st.sidebar.selectbox("Select User (Login):", user_list)
+        
+        user_data = df_users[df_users['Email'] == current_user].iloc[0]
+        st.sidebar.success(f"Welcome, {user_data['Full_Name']}")
+        
+        # Pipeline Filter by Role
+        if user_data['Role'] not in ['CEO', 'ACCOUNTANT']:
+            display_deals = df_deals[df_deals['Seller_Email'] == current_user]
+        else:
+            display_deals = df_deals
 
-    for i, stage in enumerate(stages):
-        with cols[i]:
-            st.markdown(f"### {stage}")
-            stage_deals = df_deals[df_deals['Stage'] == stage]
+        # Kanban Board UI
+        if 'Pipeline_Stages' in df_settings.columns:
+            stages = df_settings['Pipeline_Stages'].dropna().tolist()
+            cols = st.columns(len(stages))
+
+            for i, stage in enumerate(stages):
+                with cols[i]:
+                    st.markdown(f"### {stage}")
+                    # Filter deals for this stage
+                    stage_deals = display_deals[display_deals['Stage'] == stage]
+                    
+                    for index, row in stage_deals.iterrows():
+                        with st.expander(f"👤 {row['Client_Name']}"):
+                            st.write(f"📞 {row['Phone']}")
+                            
+                            # Display Tasks for this specific client
+                            if not df_tasks.empty:
+                                client_tasks = df_tasks[df_tasks['Client_Name'] == row['Client_Name']]
+                                if not client_tasks.empty:
+                                    st.markdown("**Tasks:**")
+                                    for _, t in client_tasks.iterrows():
+                                        icon = "✅" if t['Status'] == 'Done' else "⏳"
+                                        st.write(f"{icon} {t['Task_Description']}")
+                            
+                            st.markdown("---")
+                            # Notes & WhatsApp
+                            st.text_area("Notes", value=row['Notes'], key=f"notes_{index}")
+                            wa_link = f"https://wa.me/{str(row['Country_Code'])}{str(row['Phone'])}"
+                            st.link_button("💬 WhatsApp", wa_link)
+        else:
+            st.error("Missing 'Pipeline_Stages' column in Settings sheet.")
             
-            for index, row in stage_deals.iterrows():
-                with st.expander(f"👤 {row['Client_Name']}"):
-                    st.write(f"**Phone:** {row['Phone']}")
-                    
-                    # Show Tasks for this client
-                    if not df_tasks.empty:
-                        client_tasks = df_tasks[df_tasks['Client_Name'] == row['Client_Name']]
-                        for _, t in client_tasks.iterrows():
-                            st.write(f"Task: {t['Task_Description']} ({t['Status']})")
-                    
-                    # Manual Note Update (Simulated for now)
-                    note = st.text_area("Update Notes", value=row['Notes'], key=f"note_{index}")
-                    
-                    if st.button("Save Note", key=f"btn_{index}"):
-                        st.success("Note saved to logic! (Link to Sheet active)")
-                        # כאן נוסיף את פקודת העדכון ברגע שהממשק יציג נתונים
-
 except Exception as e:
-    st.error("Connection Error. Please ensure the Google Sheet is shared as 'Editor'.")
-    st.write(e)
+    st.error("System is initializing or Connection error.")
+    st.info("Make sure Google Sheet is shared as 'Anyone with the link can EDIT'")
+    st.exception(e)
